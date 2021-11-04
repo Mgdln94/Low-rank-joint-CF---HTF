@@ -57,6 +57,22 @@ def rejection_sampler(pdf, t, num_samples=1, xmin=0, xmax=1): # https://gist.git
         ntrial = ntrial + 1
     return np.asarray(ran)
 
+
+def predict(md, x, basis):
+    M, N = x.shape
+    K, F = md.factors[0].shape
+    res = torch.Tensor(np.ones((M, F)))
+
+    basis = ComplexTensor(np.array(basis, dtype=np.complex64))
+    for n in range(N):
+        aug_fac = ComplexTensor(torch.cat((torch.cat((((ComplexTensor(md.factors[n]).real)), torch.ones(1,F), (ComplexTensor(md.factors[n]).real).__reversed__()), dim=0), torch.cat((((ComplexTensor(md.factors[n]).imag)), torch.zeros(1,F), (ComplexTensor(md.factors[n]).imag.neg()).__reversed__()), dim=0)), dim=0))
+        tmp = (((basis[n][:,:]).t().mm((aug_fac)))).real
+        tmp[tmp < 0] = 0
+        res = res * tmp
+    # Ensure sum to 1 constraint
+    fnl_results = torch.sum((res.mm(torch.diagflat(torch.Tensor(md.factors[-1])))), dim=1)
+    return fnl_results
+
 def sample(md, num_samples, t):
     rand_lamda_index =  np.random.choice(md.F, num_samples, replace=True, p= np.squeeze((md.factors[-1])/(md.factors[-1]).sum()))
     samples = np.ones((num_samples, md.N))
@@ -134,6 +150,12 @@ def cda_regression_sgd(X, X_test, n_coef, alpha, F, lr, fold, b_size=512, max_it
     ax.set_axisbelow(True)
     cmap = sns.light_palette("#2ecc71", as_cmap=True)
     plt.scatter(X_samples[:, 0], X_samples[:, 1])
+
+    # Save the test score
+    basis_test = cda_htf_sgd.get_basis_tst(X_test, md.coef_size)
+    target_est_test = predict(md, X_test, basis_test)
+    #MSE_folds_test[it, n_split] = np.linalg.norm(target_est_test - Y_test) ** 2 / X_test.shape[0]
+    print(f'coef: {coef_s}, regul:{a}, rank:{f}, lr:{lr}, b_size:{b_size}, MSE_test: {MSE_folds_test[it, n_split]}')
 
     print('Magda')
 
